@@ -1,0 +1,405 @@
+% paper.tex - AI4Math Reliability Paper
+% Compile with: Overleaf (pdfLaTeX) or: pdflatex paper.tex && bibtex paper && pdflatex paper.tex && pdflatex paper.tex
+
+\documentclass[11pt,a4paper]{article}
+
+% === Packages ===
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{cite}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\geometry{margin=2.5cm}
+
+\newcommand{\keywords}[1]{\noindent\textbf{Keywords:} #1\par\vspace{1em}}
+
+% === Title & Authors ===
+\title{From Generation to Verification: \\ A Structured Audit Framework for Reliable AI Mathematical Reasoning}
+
+\author{
+  三秋羲
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% === Abstract ===
+\begin{abstract}
+Large language models (LLMs) have demonstrated impressive capabilities in mathematical reasoning, yet their outputs remain prone to subtle errors---from incorrect intermediate steps to plausible-sounding but false conclusions. We propose a \emph{structured audit framework} that decomposes AI-assisted mathematical reasoning into three layers: \textbf{Generation}, \textbf{Semantic Reduction}, and \textbf{Verification}. Our framework introduces a typed intermediate representation (IR) as the bridge between informal natural-language reasoning and formal verification, enabling systematic reliability assessment. We apply this framework to analyze five representative AI4Math systems (AlphaGeometry, AlphaProof, FunSearch, Ramanujan Machine, and AlphaTensor), identifying specific failure modes and mitigation strategies at each layer. We further propose an operational \emph{reliability checklist} for practitioners. Our analysis reveals that the Semantic Reduction layer is the primary bottleneck for end-to-end reliability, and that bidirectional consistency between IR and natural language is a necessary but insufficient condition for trustworthy AI mathematics.
+\end{abstract}
+
+\keywords{AI for Mathematics \and Reliability \and Formal Verification \and Semantic Reduction \and Large Language Models}
+
+% === 1. Introduction ===
+\section{Introduction}
+\label{sec:intro}
+
+Artificial intelligence has increasingly penetrated mathematical research, from guiding human intuition in knot theory~\cite{davies2021advancing} to discovering new matrix multiplication algorithms~\cite{fawzi2022discovering} and solving olympiad-level geometry~\cite{trinh2024solving}. The emergence of large language models (LLMs)---built on the Transformer architecture~\cite{vaswani2017attention}---has accelerated this trend, with systems like GPT-4 and Claude demonstrating the ability to generate mathematical proofs, solve competition problems, and even propose novel conjectures~\cite{romera2024mathematical}.
+
+However, this progress comes with a critical challenge: \emph{reliability}. AI-generated mathematical reasoning often appears correct on the surface but contains subtle errors---incorrect logical steps, unstated assumptions, or conclusions that do not follow from the premises. Unlike empirical sciences where predictions can be tested against physical reality, mathematical correctness requires \emph{formal verification}: every step must follow from axioms by rules of inference.
+
+The academic community has responded with various reliability frameworks: search-and-verify pipelines~\cite{cobbe2021training}, formal proof assistants like Lean~\cite{avigad2014lean} and Coq, and tool-augmented reasoning~\cite{schick2023toolformer,gao2023pal}. Yet these approaches often address reliability at a single layer---either improving generation quality or adding post-hoc verification---without a systematic framework for understanding where and why failures occur.
+
+\textbf{Our contribution.} We propose a three-layer audit framework that decomposes AI mathematical reasoning into:
+\begin{enumerate}
+  \item \textbf{Generation Layer}: produces natural-language reasoning (e.g., chain-of-thought);
+  \item \textbf{Semantic Reduction Layer}: translates informal reasoning into structured intermediate representations (typed IR, proof objects, or executable programs);
+  \item \textbf{Verification Layer}: checks correctness via formal methods, symbolic computation, or constraint satisfaction.
+\end{enumerate}
+
+We argue that the \emph{Semantic Reduction Layer} is the primary bottleneck for end-to-end reliability. Without stable reduction from natural language to verifiable artifacts, verification has no anchor, and hallucinations persist.
+
+We apply this framework to analyze five representative AI4Math systems, identifying specific failure modes and proposing an operational reliability checklist for practitioners.
+
+% === 2. Background ===
+\section{Background}
+\label{sec:background}
+
+\subsection{AI for Mathematics: A Brief Survey}
+
+The application of AI to mathematics spans several paradigms~\cite{ju2025ai4math,chen2026lectures}:
+
+\begin{itemize}
+  \item \textbf{AI-guided discovery}: Using machine learning to identify patterns and guide human intuition, as demonstrated by DeepMind's work on knot theory and matrix multiplication~\cite{davies2021advancing,fawzi2022discovering}.
+  \item \textbf{Automated theorem proving}: Combining neural networks with symbolic reasoning to prove mathematical theorems, exemplified by AlphaGeometry~\cite{trinh2024solving} and AlphaProof.
+  \item \textbf{Conjecture generation}: Using AI to propose new mathematical conjectures, as seen in the Ramanujan Machine~\cite{raayoni2021generating} and FunSearch~\cite{romera2024mathematical}.
+  \item \textbf{Mathematical problem solving}: Applying LLMs to solve competition-style problems (GSM8K, MATH benchmark) via chain-of-thought~\cite{wei2022chain} and program-aided reasoning~\cite{gao2023pal}.
+\end{itemize}
+
+\subsection{The Reliability Challenge}
+
+Despite these advances, reliability remains a fundamental concern. LLMs are probabilistic text generators, not logical reasoners~\cite{chollet2019measure}. They can produce outputs that are:
+\begin{itemize}
+  \item \textbf{Syntactically correct but semantically wrong}: The proof follows valid formatting but contains logical gaps.
+  \item \textbf{Locally correct but globally inconsistent}: Individual steps are valid, but the conclusion does not follow from the premises.
+  \item \textbf{Plausible but unverifiable}: The reasoning appears sound but cannot be checked by any known formal method.
+\end{itemize}
+
+These failure modes are particularly dangerous in mathematics, where a single incorrect step invalidates the entire argument.
+
+% === 3. The Three-Layer Framework ===
+\section{The Three-Layer Audit Framework}
+\label{sec:framework}
+
+We propose decomposing AI-assisted mathematical reasoning into three layers, each with distinct responsibilities and failure modes.
+
+\subsection{Generation Layer}
+
+The Generation Layer produces natural-language mathematical reasoning. This includes:
+\begin{itemize}
+  \item Chain-of-thought (CoT) prompting~\cite{wei2022chain}
+  \item Program-of-thought (PoT) generation~\cite{gao2023pal}
+  \item Tool-augmented reasoning~\cite{schick2023toolformer}
+\end{itemize}
+
+\textbf{Characteristics:}
+\begin{itemize}
+  \item \emph{Probabilistic}: Outputs are sampled from a distribution, not deterministically derived.
+  \item \emph{Untyped}: No formal type system constrains the reasoning.
+  \item \emph{Informal}: Expressed in natural language, which is inherently ambiguous.
+\end{itemize}
+
+\textbf{Failure modes:}
+\begin{itemize}
+  \item \textbf{Hallucination}: Inventing false statements or non-existent theorems.
+  \item \textbf{Logical gaps}: Skipping steps or making unjustified leaps.
+  \item \textbf{Inconsistency}: Contradicting earlier statements within the same reasoning chain.
+\end{itemize}
+
+\subsection{Semantic Reduction Layer}
+
+The Semantic Reduction Layer translates informal natural-language reasoning into structured, machine-checkable artifacts. This is the \emph{critical bottleneck} in our framework.
+
+\textbf{Target artifacts include:}
+\begin{itemize}
+  \item \textbf{Typed intermediate representations (IR)}: Abstract syntax trees (ASTs) with type annotations.
+  \item \textbf{Proof objects}: Formal proof terms in systems like Lean~\cite{avigad2014lean} or Coq.
+  \item \textbf{Executable programs}: Code that can be run to verify computational claims~\cite{gao2023pal}.
+  \item \textbf{Constraint systems}: Sets of equations or inequalities for SMT solvers~\cite{de2008z3}.
+\end{itemize}
+
+\textbf{Theoretical grounding:} The Semantic Reduction Layer is motivated by the \emph{Curry-Howard correspondence}, which establishes a deep connection between proofs and programs. Under this correspondence, a mathematical proof can be viewed as a program, and a theorem as a type. The reduction layer thus transforms informal proofs into typed programs that can be checked by a compiler.
+
+\textbf{Challenges:}
+\begin{itemize}
+  \item \textbf{Ambiguity}: Natural language is inherently ambiguous; multiple formal interpretations may exist.
+  \item \textbf{Missing typing}: Informal reasoning often omits type information that must be inferred.
+  \item \textbf{Non-invertibility}: The mapping from natural language to IR is many-to-one; information is lost in translation.
+\end{itemize}
+
+\textbf{Failure modes:}
+\begin{itemize}
+  \item \textbf{Reduction failure}: Unable to produce a valid IR from the natural-language input.
+  \item \textbf{Semantic drift}: The IR does not faithfully represent the intended meaning.
+  \item \textbf{Type errors}: The IR is ill-typed, indicating a logical inconsistency.
+\end{itemize}
+
+\subsection{Verification Layer}
+
+The Verification Layer checks the correctness of the structured artifacts produced by the Semantic Reduction Layer.
+
+\textbf{Verification methods include:}
+\begin{itemize}
+  \item \textbf{Formal proof checking}: Using proof assistants like Lean~\cite{avigad2014lean}, Coq, or Agda to verify proof objects.
+  \item \textbf{Symbolic computation}: Using computer algebra systems to verify algebraic identities.
+  \item \textbf{SMT solving}: Using satisfiability modulo theories solvers~\cite{de2008z3} to check constraint systems.
+  \item \textbf{Model checking}: Verifying properties of finite-state systems.
+\end{itemize}
+
+\textbf{Characteristics:}
+\begin{itemize}
+  \item \emph{Deterministic}: Verification is a yes/no decision, not probabilistic.
+  \item \emph{Sound}: If verification succeeds, the artifact is correct (modulo the soundness of the verification tool).
+  \item \emph{Incomplete}: Verification may fail even for correct artifacts (e.g., due to undecidability).
+\end{itemize}
+
+\textbf{Failure modes:}
+\begin{itemize}
+  \item \textbf{Verification failure}: The artifact is incorrect or ill-formed.
+  \item \textbf{Verification timeout}: The verification process does not terminate within resource bounds.
+  \item \textbf{False negatives}: The artifact is correct but the verifier cannot confirm it.
+\end{itemize}
+
+% === 4. Case Studies ===
+\section{Case Studies: Auditing AI4Math Systems}
+\label{sec:cases}
+
+We apply our three-layer framework to analyze five representative AI4Math systems. For each system, we identify the specific mechanisms at each layer, assess reliability, and analyze failure modes.
+
+\subsection{AlphaGeometry: Neuro-Symbolic Geometry Proving}
+
+AlphaGeometry~\cite{trinh2024solving} is a neuro-symbolic system that solved IMO 2022 Problem 2 (a geometry proof) under competition conditions. It represents a paradigm where neural generation is tightly constrained by symbolic verification.
+
+\textbf{Generation Layer:} A Transformer-based language model trained on 100 million synthetic geometry problems predicts \emph{auxiliary objects}---additional points, lines, or circles that are not given in the problem statement but are necessary for the proof. The model outputs a ranked list of candidate constructions, each represented as a set of geometric constraints (e.g., ``point $P$ lies on line $AB$ and circle $C$'').
+
+\textbf{Semantic Reduction Layer:} Each candidate construction is encoded as a system of polynomial equations over the coordinates of geometric objects. The reduction is \emph{exact}: geometric constraints (incidence, parallelism, perpendicularity) map directly to algebraic equations. The reduction layer uses a \emph{symbolic deduction engine} with 200+ deduction rules (e.g., if two angles are equal and two sides are equal, then the triangles are congruent by SAS).
+
+\textbf{Verification Layer:} The deduction engine performs \emph{breadth-first search} over the space of derivable statements, starting from the given constraints and the auxiliary construction. If a proof path exists, BFS is guaranteed to find it (completeness within the rule set). The verification is \emph{exhaustive} and \emph{deterministic}.
+
+\textbf{Reliability assessment:}
+\begin{itemize}
+  \item \textbf{Strength}: The generation layer is restricted to a \emph{narrow domain} (auxiliary object construction), where the neural network's suggestions can be exhaustively verified. The semantic reduction is \emph{lossless} (geometric constraints $\leftrightarrow$ polynomial equations). The verification is \emph{complete} within the rule set.
+  \item \textbf{Weakness}: The system cannot handle problems requiring creative insights beyond the 200+ deduction rules. The neural network may propose constructions that are geometrically invalid (e.g., a point that does not exist), leading to reduction failure.
+  \item \textbf{Failure mode}: \emph{Generation-layer hallucination}---the neural network proposes an auxiliary object that is geometrically impossible, causing the deduction engine to fail.
+\end{itemize}
+
+\textbf{Audit conclusion:} AlphaGeometry achieves high reliability ($>90\%$ on IMO geometry problems) by \emph{constraining the generation layer} and \emph{making the semantic reduction exact}. The system exemplifies Pattern~1 (domain restriction improves reliability).
+
+\subsection{AlphaProof: Formal Reasoning with Reinforcement Learning}
+
+AlphaProof combines a language model (based on Qwen 2.5) with the Lean 4 theorem prover~\cite{avigad2014lean}, using reinforcement learning to guide proof search. It achieved a silver-medal level at IMO 2024.
+
+\textbf{Generation Layer:} The language model generates \emph{proof sketches} in a mixture of natural language and Lean 4 code. The model is trained via reinforcement learning, with the reward signal coming from Lean 4's type checker (i.e., whether the generated Lean code type-checks as a valid proof).
+
+\textbf{Semantic Reduction Layer:} The proof sketches are translated into \emph{Lean 4 proof terms}. This is the most challenging layer: the language model must resolve ambiguities (e.g., which induction hypothesis to apply), infer missing type information (e.g., the type of a variable), and produce syntactically valid Lean 4 code. The reduction is \emph{lossy}: some natural-language reasoning steps may not have direct Lean equivalents.
+
+\textbf{Verification Layer:} Lean 4's type checker verifies the proof for \emph{type correctness}. If the Lean code type-checks, the proof is valid (modulo the soundness of Lean's kernel). The verification is \emph{sound} and \emph{deterministic}.
+
+\textbf{Reliability assessment:}
+\begin{itemize}
+  \item \textbf{Strength}: The verification layer is \emph{formally sound}: if Lean accepts the proof, it is correct. The RL training loop provides a \emph{dense reward signal} (type-checking success/failure) that guides the language model toward valid proofs.
+  \item \textbf{Weakness}: The semantic reduction layer is the \emph{primary bottleneck}. Translating informal proof sketches into valid Lean 4 code requires resolving ambiguities and inferring missing information. The language model may produce Lean code that is \emph{syntactically valid but semantically incorrect} (e.g., proving a different theorem than intended).
+  \item \textbf{Failure mode}: \emph{Semantic drift}---the Lean proof does not match the intended natural-language argument. The proof may be formally correct but prove a different statement.
+\end{itemize}
+
+\textbf{Audit conclusion:} AlphaProof achieves strong reliability through \emph{tight integration} between generation and verification, but the semantic reduction layer remains a bottleneck. The system exemplifies Pattern~3 (semantic reduction bottleneck).
+
+\subsection{FunSearch: Program Search with LLMs}
+
+FunSearch~\cite{romera2024mathematical} uses LLMs to generate programs that are then evaluated by a symbolic executor. It discovered new solutions to the cap set problem and the Erd\H{o}s-Rado sunflower problem.
+
+\textbf{Generation Layer:} An LLM (based on Codex) generates candidate \emph{Python programs} that implement heuristics for combinatorial search problems. The programs are short (typically $<$50 lines) and operate on abstract data structures (sets, graphs, functions).
+
+\textbf{Semantic Reduction Layer:} The generated Python code is parsed into an \emph{abstract syntax tree} (AST). The reduction is \emph{well-defined}: Python syntax is unambiguous, and the AST is a faithful representation of the code. However, the reduction does not capture \emph{semantic intent}---the AST does not represent what the program is \emph{supposed} to compute.
+
+\textbf{Verification Layer:} A \emph{symbolic executor} runs the generated programs on test inputs and checks the outputs against known solutions or mathematical properties (e.g., ``the output set has no three-term arithmetic progression''). The verification is \emph{executable} but \emph{incomplete}: it only checks correctness on the test inputs, not for all possible inputs.
+
+\textbf{Reliability assessment:}
+\begin{itemize}
+  \item \textbf{Strength}: The semantic reduction is \emph{exact} (Python $\to$ AST). The verification is \emph{pragmatic}: it checks correctness by execution, which is sufficient for many combinatorial problems. The system uses a \emph{function cache} to avoid re-evaluating duplicate programs.
+  \item \textbf{Weakness}: The verification is \emph{incomplete}: a program may pass all test cases but fail on unseen inputs. The generation layer may produce programs that are \emph{syntactically valid but semantically meaningless} (e.g., infinite loops, type errors at runtime).
+  \item \textbf{Failure mode}: \emph{Verification incompleteness}---the program passes test cases but is incorrect in general. This is mitigated by using a large and diverse set of test inputs.
+\end{itemize}
+
+\textbf{Audit conclusion:} FunSearch achieves reliability through \emph{executable verification} and \emph{iterative refinement} (the LLM is prompted with examples of successful programs). The system exemplifies Pattern~2 (executable verification is pragmatic).
+
+\subsection{Ramanujan Machine: Conjecture Generation}
+
+The Ramanujan Machine~\cite{raayoni2021generating} uses AI to search for conjectures about fundamental mathematical constants (e.g., $e$, $\pi$, $\zeta(3)$). It has proposed several conjectures that were later proved by human mathematicians.
+
+\textbf{Generation Layer:} The system uses \emph{machine learning algorithms} (including genetic algorithms and Monte Carlo tree search) to propose conjectures in the form of \emph{continued fractions}, \emph{series expansions}, or \emph{algebraic relations} involving mathematical constants.
+
+\textbf{Semantic Reduction Layer:} Conjectures are encoded as \emph{symbolic expressions} in a computer algebra system (e.g., Mathematica). The reduction is \emph{straightforward}: the conjecture format is restricted (e.g., continued fractions of a specific form), so the mapping from conjecture to symbolic expression is unambiguous.
+
+\textbf{Verification Layer:} The system uses \emph{high-precision numerical computation} (up to thousands of decimal places) to check whether the conjectured relation holds numerically. For example, if the conjecture is $\pi = 3 + \frac{1^2}{6 + \frac{3^2}{6 + \frac{5^2}{6 + \cdots}}}$, the system computes both sides to 10,000 decimal places and checks if they agree.
+
+\textbf{Reliability assessment:}
+\begin{itemize}
+  \item \textbf{Strength}: The semantic reduction is \emph{exact} (conjecture format is restricted). The numerical verification is \emph{highly reliable}: if a conjecture holds to 10,000 decimal places, it is almost certainly correct (though not formally proved).
+  \item \textbf{Weakness}: The verification is \emph{incomplete}: numerical evidence is not a proof. There exist ``false'' conjectures that hold to many decimal places but are ultimately incorrect (e.g., the Mertens conjecture, which held for all $n < 10^{14}$ but was disproved).
+  \item \textbf{Failure mode}: \emph{Numerical coincidence}---the conjecture holds to high precision but is ultimately false. This is mitigated by checking to very high precision and by cross-referencing with known mathematical results.
+\end{itemize}
+
+\textbf{Audit conclusion:} The Ramanujan Machine achieves reliability through \emph{high-precision numerical verification} and \emph{restricted conjecture format}. However, the verification layer is fundamentally \emph{incomplete} (numerical evidence $\neq$ proof). The system exemplifies the tension between \emph{pragmatic reliability} and \emph{formal certainty}.
+
+\subsection{AlphaTensor: Discovering Algorithms via Reinforcement Learning}
+
+AlphaTensor~\cite{fawzi2022discovering} uses reinforcement learning~\cite{sutton2018reinforcement} to discover faster algorithms for fundamental algebraic operations, notably matrix multiplication. It discovered a new algorithm for $4 \times 4$ matrix multiplication that uses fewer multiplications than the previous best known algorithm.
+
+\textbf{Generation Layer:} A \emph{reinforcement learning agent} (based on AlphaZero) generates sequences of \emph{bilinear operations} (additions and multiplications of matrix entries). The agent plays a ``game'' where each move corresponds to choosing a multiplication or addition, and the goal is to express the target tensor (e.g., the matrix multiplication tensor) as a sum of rank-1 tensors.
+
+\textbf{Semantic Reduction Layer:} The generated sequence of operations is encoded as a \emph{tensor decomposition}. The reduction is \emph{exact}: each sequence of operations corresponds to a unique tensor decomposition, and vice versa. The reduction layer uses \emph{group-theoretic symmetries} to reduce the search space (e.g., permutations of matrix indices).
+
+\textbf{Verification Layer:} The resulting algorithm is verified by \emph{exhaustive testing}: the algorithm is run on all possible inputs (for small matrices) or a large random sample (for larger matrices), and the outputs are compared against the known correct result. The verification is \emph{executable} and \emph{highly reliable} (though not formally proved for all inputs).
+
+\textbf{Reliability assessment:}
+\begin{itemize}
+  \item \textbf{Strength}: The semantic reduction is \emph{exact} (operations $\leftrightarrow$ tensor decomposition). The verification is \emph{exhaustive} for small cases. The RL agent uses \emph{Monte Carlo tree search} to explore the space of algorithms efficiently.
+  \item \textbf{Weakness}: The verification is \emph{incomplete} for large cases (only a random sample is tested). The generation layer may produce algorithms that are \emph{correct but inefficient} (e.g., using more operations than necessary).
+  \item \textbf{Failure mode}: \emph{Verification incompleteness}---the algorithm passes the test cases but is incorrect for some unseen inputs. This is mitigated by testing on a large and diverse set of inputs.
+\end{itemize}
+
+\textbf{Audit conclusion:} AlphaTensor achieves reliability through \emph{exact semantic reduction} and \emph{exhaustive verification} for small cases. The system exemplifies Pattern~1 (domain restriction improves reliability) and Pattern~2 (executable verification is pragmatic).
+
+% === 5. Cross-System Analysis ===
+\section{Cross-System Analysis: Patterns and Insights}
+\label{sec:analysis}
+
+Table~\ref{tab:comparison} summarizes our analysis of the five systems.
+
+\begin{table}[ht]
+\centering
+\caption{Comparison of AI4Math systems across the three-layer framework}
+\label{tab:comparison}
+\begin{tabular}{lccc}
+\toprule
+\textbf{System} & \textbf{Generation} & \textbf{Semantic Reduction} & \textbf{Verification} \\
+\midrule
+AlphaGeometry & Neural (narrow) & Symbolic constraints & Exhaustive search \\
+AlphaProof & LLM + RL & Lean 4 code & Formal proof \\
+FunSearch & LLM & Python AST & Execution \\
+Ramanujan & AI search & Symbolic expressions & Numerical \\
+AlphaTensor & RL & Tensor operations & Execution \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pattern 1: Domain Restriction Improves Reliability}
+
+Systems that restrict the generation layer to a narrow domain (AlphaGeometry, AlphaTensor) achieve higher reliability than general-purpose systems. This is because:
+\begin{itemize}
+  \item The semantic reduction layer is simpler and more well-defined.
+  \item The verification layer can be exhaustive within the restricted domain.
+\end{itemize}
+
+\subsection{Pattern 2: Executable Verification is Pragmatic}
+
+Systems that use executable verification (FunSearch, AlphaTensor) achieve practical reliability without formal proof. This approach is limited to problems where correctness can be checked by running the program, but it covers many important cases.
+
+\subsection{Pattern 3: The Semantic Reduction Bottleneck}
+
+Across all systems, the semantic reduction layer is the primary source of failure. When the mapping from natural language to structured representation is ambiguous or lossy, errors propagate to the verification layer.
+
+\subsection{Pattern 4: Bidirectional Consistency is Necessary but Insufficient}
+
+We define \emph{bidirectional consistency} as the property that:
+\begin{enumerate}
+  \item The structured representation faithfully encodes the natural-language reasoning (\emph{forward consistency}).
+  \item The natural-language reasoning can be recovered from the structured representation (\emph{backward consistency}).
+\end{enumerate}
+
+Bidirectional consistency is \emph{necessary} for reliability: if the structured representation does not match the intended meaning, verification is meaningless. However, it is \emph{not sufficient}: the structured representation itself may be incorrect (e.g., due to errors in the generation layer).
+
+% === 6. Reliability Checklist ===
+\section{An Operational Reliability Checklist}
+\label{sec:checklist}
+
+Based on our analysis, we propose the following checklist for practitioners developing AI4Math systems:
+
+\begin{table}[ht]
+\centering
+\caption{Reliability checklist for AI4Math systems}
+\label{tab:checklist}
+\begin{tabular}{p{0.8\textwidth}}
+\toprule
+\textbf{Generation Layer} \\
+\midrule
+$\square$ Is the generation domain explicitly bounded? \\
+$\square$ Are hallucination detection mechanisms in place? \\
+$\square$ Is there a mechanism for detecting logical gaps? \\
+\midrule
+\textbf{Semantic Reduction Layer} \\
+\midrule
+$\square$ Is the target IR well-defined and unambiguous? \\
+$\square$ Is the mapping from natural language to IR documented? \\
+$\square$ Are bidirectional consistency checks implemented? \\
+$\square$ Is type information preserved or inferred correctly? \\
+\midrule
+\textbf{Verification Layer} \\
+\midrule
+$\square$ Is the verification method sound (no false positives)? \\
+$\square$ Are verification failures handled gracefully? \\
+$\square$ Is the verification process reproducible? \\
+$\square$ Are the limitations of verification explicitly documented? \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% === 7. Discussion ===
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Limitations}
+
+Our framework has several limitations:
+\begin{itemize}
+  \item \textbf{Design-level analysis}: We analyze existing systems at the design level, without empirical evaluation of reliability metrics.
+  \item \textbf{Limited case studies}: We focus on five representative systems; other AI4Math approaches may exhibit different patterns.
+  \item \textbf{Informal verification}: Our checklist is a practical guide, not a formal verification method.
+\end{itemize}
+
+\subsection{Future Work}
+
+Several directions merit further investigation:
+\begin{itemize}
+  \item \textbf{Empirical validation}: Applying the framework to measure reliability across a broader range of AI4Math systems.
+  \item \textbf{Formalization}: Formalizing the semantic reduction layer using type theory or category theory.
+  \item \textbf{Automation}: Developing tools that automatically check bidirectional consistency.
+  \item \textbf{Extension to other domains}: Applying the framework to AI-assisted reasoning in physics, chemistry, or other formal sciences.
+\end{itemize}
+
+% === 8. Conclusion ===
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have proposed a three-layer audit framework for assessing the reliability of AI-assisted mathematical reasoning. Our framework decomposes the reasoning process into Generation, Semantic Reduction, and Verification layers, each with distinct responsibilities and failure modes.
+
+Through case studies of five representative AI4Math systems, we have identified four key patterns:
+\begin{enumerate}
+  \item Domain restriction improves reliability by simplifying the semantic reduction layer.
+  \item Executable verification is a pragmatic alternative to formal proof.
+  \item The semantic reduction layer is the primary bottleneck for end-to-end reliability.
+  \item Bidirectional consistency is necessary but insufficient for trustworthy AI mathematics.
+\end{enumerate}
+
+We have also proposed an operational reliability checklist for practitioners. Our analysis reveals that reliable AI mathematics requires not just better generation or stronger verification, but a \emph{structured semantic layer} that faithfully bridges the gap between informal reasoning and formal checking.
+
+% === Acknowledgments ===
+\section*{Acknowledgments}
+
+We thank the reviewers for their constructive feedback. This work was supported by [funding information].
+
+% === References ===
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
